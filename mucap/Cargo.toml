@@ -1,0 +1,17 @@
+[package]
+name = "mucap"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+crate-type = ["cdylib", "lib"]
+
+[dependencies]
+nih_plug = { git = "https://github.com/robbert-vdh/nih-plug.git", branch = "master", features = ["assert_process_allocs", "standalone"] }
+nih_plug_vizia = { git = "https://github.com/robbert-vdh/nih-plug.git", branch = "master" }
+atomic_float = "1.1.0"
+arboard = "3.6.1"
+midly = "0.5.3"
+anyhow = "1.0.100"
+rand = "0.9.2"
+rand_distr = "0.5.1"

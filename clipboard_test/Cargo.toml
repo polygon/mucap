@@ -1,0 +1,8 @@
+[package]
+name = "clipboard_test"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+arboard = "3.6.1"
+midly = "0.5.3"

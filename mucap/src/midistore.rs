@@ -6,12 +6,12 @@ use nih_plug::midi::{NoteEvent, sysex::SysExMessage};
 use nih_plug::nih_log;
 
 pub struct Note {
-    t_start: f32,
+    pub t_start: f32,
     idx_on: usize,
-    t_end: f32,
+    pub t_end: f32,
     idx_off: usize,
     channel: u4,
-    key: u7,
+    pub key: u7,
     vel: u7,
 }
 
@@ -21,8 +21,8 @@ pub enum StoreEntry {
 
 pub struct MidiStore {
     store: Vec<(f32, StoreEntry)>,
-    notes: Vec<Note>,
-    in_flight: Vec<Note>,
+    pub notes: Vec<Note>,
+    pub in_flight: Vec<Note>,
 }
 
 impl MidiStore {

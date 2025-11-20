@@ -1,5 +1,5 @@
 use nih_plug::nih_log;
-use nih_plug::prelude::Editor;
+use nih_plug::prelude::{AtomicF32, Editor};
 use nih_plug_vizia::vizia::prelude::*;
 use nih_plug_vizia::widgets::*;
 use nih_plug_vizia::{ViziaState, ViziaTheming, assets, create_vizia_editor};
@@ -12,7 +12,8 @@ use crate::midistore::MidiStore;
 
 #[derive(Lens)]
 struct Data {
-    store: Arc<RwLock<MidiStore>>
+    store: Arc<RwLock<MidiStore>>,
+    time: Arc<AtomicF32>,
 }
 
 impl Model for Data {}
@@ -21,15 +22,15 @@ pub(crate) fn default_state() -> Arc<ViziaState> {
     ViziaState::new(|| (1920, 800))
 }
 
-pub(crate) fn create(editor_state: Arc<ViziaState>, store: Arc<RwLock<MidiStore>>) -> Option<Box<dyn Editor>> {
+pub(crate) fn create(editor_state: Arc<ViziaState>, store: Arc<RwLock<MidiStore>>, time: Arc<AtomicF32>) -> Option<Box<dyn Editor>> {
     create_vizia_editor(editor_state, ViziaTheming::Custom, move |cx, _| {
         assets::register_noto_sans_light(cx);
         assets::register_noto_sans_thin(cx);
 
-        Data { store: store.clone() }.build(cx);
+        Data { store: store.clone(), time: time.clone() }.build(cx);
 
         VStack::new(cx, |cx| {
-            Label::new(cx, "Drag")
+            /*Label::new(cx, "Drag")
                 .font_family(vec![FamilyOwned::Name(String::from(assets::NOTO_SANS))])
                 .font_weight(FontWeightKeyword::Thin)
                 .font_size(30.0)
@@ -53,8 +54,8 @@ pub(crate) fn create(editor_state: Arc<ViziaState>, store: Arc<RwLock<MidiStore>
                 .child_bottom(Pixels(0.0))
                 .on_drop(|cx, data| {
                     nih_log!("Drop started: {:?}", data);
-                });
-            NoteView::new(cx)
+                });*/
+            NoteView::new(cx, store.clone(), time.clone())
                 .width(Stretch(1.0))
                 .height(Stretch(1.0));
         }).width(Stretch(1.0)).height(Stretch(1.0));

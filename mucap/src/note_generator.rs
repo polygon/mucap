@@ -28,8 +28,8 @@ impl Default for NoteGenerator {
             note_max: 108.into(),
             avg: 60.0,
             stddev: 12.0,
-            exp_note_dist: 0.8,     // On average one note every 0.8 seconds
-            exp_note_length: 1.3,   // On average one note lasts 1.3 seconds
+            exp_note_dist: 0.4,     // On average one note every 0.8 seconds
+            exp_note_length: 2.5,   // On average one note lasts 1.3 seconds
             rng: Some(rand::rngs::SmallRng::seed_from_u64(1)),
         }
     }

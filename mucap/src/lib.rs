@@ -1,6 +1,6 @@
 use nih_plug::{midi::MidiResult, prelude::*};
 use nih_plug_vizia::ViziaState;
-use std::sync::{Arc, RwLock, mpsc};
+use std::sync::{Arc, RwLock, atomic::Ordering, mpsc};
 
 mod midistore;
 mod note_generator;
@@ -16,6 +16,7 @@ type Samples = i64;
 pub struct Mucap {
     params: Arc<MucapParams>,
     samples: Samples,
+    time: Arc<AtomicF32>,
     store: Arc<RwLock<MidiStore>>,
     tx: Option<mpsc::SyncSender<(f32, [u8; 3])>>,
     note_delivery_thread: Option<std::thread::JoinHandle<()>>,
@@ -34,6 +35,7 @@ impl Default for Mucap {
         Self {
             params: Arc::new(MucapParams::default()),
             samples: 0,
+            time: Arc::new(AtomicF32::new(0.0)),
             store: store.clone(),
             tx: None,
             note_delivery_thread: None,
@@ -91,7 +93,7 @@ impl Plugin for Mucap {
     }
 
     fn editor(&mut self, _async_executor: AsyncExecutor<Self>) -> Option<Box<dyn Editor>> {
-        ui::create(self.params.editor_state.clone(), self.store.clone())
+        ui::create(self.params.editor_state.clone(), self.store.clone(), self.time.clone())
     }
 
     fn initialize(
@@ -129,12 +131,19 @@ impl Plugin for Mucap {
             //nih_log!("Event @ {:.6}: {:?}", ev_time, event.as_midi());
         }
 
-        if let Some(buf) = self.generator.generate(buffer.samples() as f32 / context.transport().sample_rate) {
-            let ev_time = self.samples as f32 / context.transport().sample_rate; 
+        if let Some(buf) = self
+            .generator
+            .generate(buffer.samples() as f32 / context.transport().sample_rate)
+        {
+            let ev_time = self.samples as f32 / context.transport().sample_rate;
             self.store.write().unwrap().add(ev_time, buf).unwrap_or(());
         }
 
         self.samples += buffer.samples() as Samples;
+        self.time.store(
+            self.samples as f32 / context.transport().sample_rate,
+            Ordering::Relaxed,
+        );
 
         ProcessStatus::Normal
     }

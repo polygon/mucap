@@ -5,7 +5,6 @@
 use std::collections::HashMap;
 
 use midly::{MidiMessage, live::LiveEvent, num::u7, io::Cursor};
-use nih_plug::wrapper::vst3::vst3_sys::vst::LegacyMidiCCOutEvent;
 use rand::{Rng, SeedableRng};
 use rand_distr::{Distribution, Normal};
 
@@ -27,7 +26,7 @@ impl Default for NoteGenerator {
             note_min: 21.into(),
             note_max: 108.into(),
             avg: 60.0,
-            stddev: 12.0,
+            stddev: 5.,
             exp_note_dist: 0.4,     // On average one note every 0.8 seconds
             exp_note_length: 2.5,   // On average one note lasts 1.3 seconds
             rng: Some(rand::rngs::SmallRng::seed_from_u64(1)),

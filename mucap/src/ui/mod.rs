@@ -9,6 +9,7 @@ pub mod noteview;
 use noteview::NoteView;
 
 use crate::midistore::MidiStore;
+use crate::ui::noteview::NoteViewEvent;
 
 #[derive(Lens)]
 struct Data {
@@ -22,12 +23,20 @@ pub(crate) fn default_state() -> Arc<ViziaState> {
     ViziaState::new(|| (1920, 800))
 }
 
-pub(crate) fn create(editor_state: Arc<ViziaState>, store: Arc<RwLock<MidiStore>>, time: Arc<AtomicF32>) -> Option<Box<dyn Editor>> {
+pub(crate) fn create(
+    editor_state: Arc<ViziaState>,
+    store: Arc<RwLock<MidiStore>>,
+    time: Arc<AtomicF32>,
+) -> Option<Box<dyn Editor>> {
     create_vizia_editor(editor_state, ViziaTheming::Custom, move |cx, _| {
         assets::register_noto_sans_light(cx);
         assets::register_noto_sans_thin(cx);
 
-        Data { store: store.clone(), time: time.clone() }.build(cx);
+        Data {
+            store: store.clone(),
+            time: time.clone(),
+        }
+        .build(cx);
 
         VStack::new(cx, |cx| {
             /*Label::new(cx, "Drag")
@@ -58,7 +67,9 @@ pub(crate) fn create(editor_state: Arc<ViziaState>, store: Arc<RwLock<MidiStore>
             NoteView::new(cx, store.clone(), time.clone())
                 .width(Stretch(1.0))
                 .height(Stretch(1.0));
-        }).width(Stretch(1.0)).height(Stretch(1.0));
+        })
+        .width(Stretch(1.0))
+        .height(Stretch(1.0));
 
         ResizeHandle::new(cx);
     })

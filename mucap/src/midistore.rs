@@ -5,6 +5,7 @@ use midly::num::{u4, u7};
 use nih_plug::midi::{NoteEvent, sysex::SysExMessage};
 use nih_plug::nih_log;
 
+#[derive(Clone)]
 pub struct Note {
     pub t_start: f32,
     idx_on: usize,
@@ -23,6 +24,8 @@ pub struct MidiStore {
     store: Vec<(f32, StoreEntry)>,
     pub notes: Vec<Note>,
     pub in_flight: Vec<Note>,
+    note_range_cache: Option<(u7, u7)>,
+    time_range_cache: Option<(f32, f32)>,
 }
 
 impl MidiStore {
@@ -31,6 +34,8 @@ impl MidiStore {
             store: Vec::with_capacity(60000),
             notes: Vec::with_capacity(10000),
             in_flight: Vec::with_capacity(128 * 16),
+            note_range_cache: None,
+            time_range_cache: None,
         }
     }
 
@@ -83,6 +88,7 @@ impl MidiStore {
             {
                 *old = new_note;
             } else {
+                self.update_ranges(new_note.key, time);
                 self.in_flight.push(new_note);
             }
         }
@@ -114,11 +120,53 @@ impl MidiStore {
                     note.t_end - note.t_start,
                     note.t_start
                 );
+                self.update_ranges(note.key, note.t_end);
                 self.notes.push(note);
             } else {
                 nih_log!("Note Off without Note On @ {:.6}", time);
             }
         }
+    }
+
+    fn update_ranges(&mut self, note: u7, time: f32) {
+        // Update note range cache
+        if let Some((note_min, note_max)) = self.note_range_cache {
+            if note < note_min {
+                self.note_range_cache = Some((note, note_max));
+            } else if note > note_max {
+                self.note_range_cache = Some((note_min, note));
+            }
+        } else {
+            self.note_range_cache = Some((note, note));
+        }
+
+        // Update time range cache
+        if let Some((time_min, time_max)) = self.time_range_cache {
+            if time < time_min {
+                self.time_range_cache = Some((time, time_max));
+            } else if time > time_max {
+                self.time_range_cache = Some((time_min, time));
+            }
+        } else {
+            self.time_range_cache = Some((time, time));
+        }
+    }
+
+    pub fn note_range(&self) -> Option<(u7, u7)> {
+        self.note_range_cache
+    }
+
+    pub fn note_range_u8(&self) -> Option<(u8, u8)> {
+        self.note_range_cache.map(|(n0, n1)| (n0.as_int(), n1.as_int()))
+    }
+
+
+    pub fn time_range(&self) -> Option<(f32, f32)> {
+        self.time_range_cache
+    }
+
+    pub fn notes_in_time(&self, t0: f32, t1: f32) -> impl Iterator<Item = &Note> {
+        self.notes.iter().filter(move |note| (t0 < note.t_end) && (t1 > note.t_start))
     }
 }
 
@@ -251,7 +299,7 @@ mod tests {
         let mut store = MidiStore::new();
 
         store.add(1.0, note_on(0, 60, 100)).unwrap();
-        
+
         // Attempting to add event in the past should fail
         let result = store.add(0.5, note_off(0, 60, 0));
         assert!(result.is_err());
@@ -263,7 +311,7 @@ mod tests {
 
         // NoteOff without corresponding NoteOn
         store.add(0.0, note_off(0, 60, 0)).unwrap();
-        
+
         // Should not crash, note should be ignored (logged)
         assert_eq!(store.in_flight.len(), 0);
         assert_eq!(store.notes.len(), 0);
@@ -295,7 +343,7 @@ mod tests {
 
         // Control Change message (0xB0 = CC on channel 0, 0x07 = volume, 0x40 = value 64)
         store.add(0.0, [0xB0, 0x07, 0x40]).unwrap();
-        
+
         assert_eq!(store.in_flight.len(), 0);
         assert_eq!(store.notes.len(), 0);
         assert_eq!(store.store.len(), 1);
@@ -332,5 +380,106 @@ mod tests {
         store.add(1.5, note_off(0, 64, 0)).unwrap();
         assert_eq!(store.in_flight.len(), 0);
         assert_eq!(store.notes.len(), 3);
+    }
+
+    #[test]
+    fn test_note_range() {
+        let mut store = MidiStore::new();
+
+        // Empty store should return None
+        assert_eq!(store.note_range(), None);
+
+        // Single note
+        store.add(0.0, note_on(0, 60, 100)).unwrap();
+        store.add(1.0, note_off(0, 60, 0)).unwrap();
+        assert_eq!(store.note_range(), Some((u7::new(60), u7::new(60))));
+
+        // Multiple notes with range
+        store.add(2.0, note_on(0, 55, 100)).unwrap();
+        store.add(3.0, note_off(0, 55, 0)).unwrap();
+        assert_eq!(store.note_range(), Some((u7::new(55), u7::new(60))));
+
+        store.add(4.0, note_on(0, 72, 100)).unwrap();
+        store.add(5.0, note_off(0, 72, 0)).unwrap();
+        assert_eq!(store.note_range(), Some((u7::new(55), u7::new(72))));
+    }
+
+    #[test]
+    fn test_time_range() {
+        let mut store = MidiStore::new();
+
+        // Empty store should return None
+        assert_eq!(store.time_range(), None);
+
+        // Single note (0.5 - 1.5)
+        store.add(0.5, note_on(0, 60, 100)).unwrap();
+        store.add(1.5, note_off(0, 60, 0)).unwrap();
+        assert_eq!(store.time_range(), Some((0.5, 1.5)));
+
+        // Add earlier note (0.1 - 0.9) - extends minimum
+        store.add(2.0, note_on(0, 55, 100)).unwrap();
+        store.add(2.9, note_off(0, 55, 0)).unwrap();
+        // At this point, we have notes ending at 2.9, so max extends
+        assert_eq!(store.time_range(), Some((0.5, 2.9)));
+
+        // Add later note (3.0 - 5.5) - extends maximum
+        store.add(3.0, note_on(0, 72, 100)).unwrap();
+        store.add(5.5, note_off(0, 72, 0)).unwrap();
+        assert_eq!(store.time_range(), Some((0.5, 5.5)));
+    }
+
+    #[test]
+    fn test_notes_in_time() {
+        let mut store = MidiStore::new();
+
+        // Create notes at different time ranges:
+        // Note 1: 0.0-1.0
+        store.add(0.0, note_on(0, 60, 100)).unwrap();
+        store.add(1.0, note_off(0, 60, 0)).unwrap();
+
+        // Note 2: 2.0-3.0
+        store.add(2.0, note_on(0, 64, 100)).unwrap();
+        store.add(3.0, note_off(0, 64, 0)).unwrap();
+
+        // Note 3: 3.5-5.0
+        store.add(3.5, note_on(0, 67, 100)).unwrap();
+        store.add(5.0, note_off(0, 67, 0)).unwrap();
+
+        // Query before any notes
+        let notes = store.notes_in_time(-1.0, 0.0).collect::<Vec<_>>();
+        assert_eq!(notes.len(), 0);
+
+        // Query overlapping only note 1
+        let notes = store.notes_in_time(0.5, 1.5).collect::<Vec<_>>();
+        assert_eq!(notes.len(), 1);
+        assert_eq!(notes[0].key, u7::new(60));
+
+        // Query overlapping note 2 and 3
+        let notes = store.notes_in_time(2.5, 4.0).collect::<Vec<_>>();
+        assert_eq!(notes.len(), 2);
+        let keys: Vec<u8> = notes.iter().map(|n| n.key.as_int()).collect();
+        assert!(keys.contains(&64));
+        assert!(keys.contains(&67));
+
+        // Query overlapping all notes
+        let notes = store.notes_in_time(0.0, 5.0).collect::<Vec<_>>();
+        assert_eq!(notes.len(), 3);
+
+        // Query between notes
+        let notes = store.notes_in_time(1.5, 2.0).collect::<Vec<_>>();
+        assert_eq!(notes.len(), 0);
+
+        // Query starting before note 1 and ending in note 3
+        let notes = store.notes_in_time(-0.5, 4.0).collect::<Vec<_>>();
+        assert_eq!(notes.len(), 3);
+
+        // Query at exact note boundaries
+        let notes = store.notes_in_time(1.0, 2.0).collect::<Vec<_>>();
+        assert_eq!(notes.len(), 0);
+
+        // Query just before note 2
+        let notes = store.notes_in_time(1.9, 2.1).collect::<Vec<_>>();
+        assert_eq!(notes.len(), 1);
+        assert_eq!(notes[0].key, u7::new(64));
     }
 }

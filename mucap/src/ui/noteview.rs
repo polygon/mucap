@@ -5,14 +5,11 @@ use std::sync::atomic::Ordering;
 
 use crate::midistore::MidiStore;
 use crate::midistore::Note;
+use crate::ui::zoom_control::ZoomControl;
 use nih_plug::nih_log;
 use nih_plug::prelude::AtomicF32;
 use nih_plug_vizia::vizia::prelude::*;
 use nih_plug_vizia::vizia::vg;
-
-pub enum NoteViewMode {
-
-}
 
 pub enum NoteViewEvent {
     Update,
@@ -30,8 +27,10 @@ pub struct NoteWindow {
 pub struct NoteView {
     store: Arc<RwLock<MidiStore>>,
     time: Arc<AtomicF32>,
-    visible_time: (f32, f32),
     note_range: (u8, u8),
+    zoom_control: ZoomControl,
+    bounds: Arc<RwLock<BoundingBox>>,
+    mouse_x: f32,
 }
 
 impl NoteView {
@@ -43,8 +42,10 @@ impl NoteView {
         Self {
             store,
             time,
-            visible_time: (0., 30.),
             note_range: (60 - 12, 60 + 11),
+            zoom_control: ZoomControl::default(),
+            bounds: Arc::new(RwLock::new(BoundingBox::default())),
+            mouse_x: 0.0,
         }
         .build(cx, |cx| {
             nih_log!("Spawning Timer Worker!");
@@ -68,14 +69,17 @@ impl View for NoteView {
     fn draw(&self, cx: &mut DrawContext, canvas: &mut Canvas) {
         //nih_log!("DRAW");
         let b = cx.bounds();
+        if let Ok(mut bounds) = self.bounds.write() {
+            *bounds = b;
+        }
         if b.w == 0.0 || b.h == 0.0 {
             return;
         }
 
-        let wnd = NoteWindow::new(self.visible_time, self.note_range, b);
+        let wnd = NoteWindow::new(self.zoom_control.current_range(), self.note_range, b);
 
         let t_now = self.time.load(Ordering::Relaxed);
-        let (t0, t1) = self.visible_time;
+        let (t0, t1) = self.zoom_control.current_range();
 
         let mut path = vg::Path::new();
         path.rect(b.x, b.y, b.w, b.h);
@@ -134,17 +138,33 @@ impl View for NoteView {
     fn event(&mut self, _cx: &mut EventContext, event: &mut Event) {
         event.map(|ev, _meta| match ev {
             NoteViewEvent::Update => self.update(),
-        })
+        });
+
+        event.map(|ev, _meta| match ev {
+            WindowEvent::MouseScroll(x, y) => {
+                if x.abs() > 0.1 {
+                    self.zoom_control.pan(0.05 * x);
+                }
+                if y.abs() > 0.1 {
+                    if let Ok(bounds) = self.bounds.read()
+                    {
+                        let wnd = NoteWindow::new(self.zoom_control.current_range(), self.note_range, bounds.clone());
+                        let center = wnd.x_to_time(self.mouse_x);
+                        self.zoom_control.zoom(1.0 - 0.05 * y, center);
+                    }
+                }
+            },
+            WindowEvent::MouseMove(x, y) => {
+                self.mouse_x = *x;
+            }
+            _ => (),
+        });
     }
 }
 
 impl NoteView {
     fn update(&mut self) {
         let t_now = self.time.load(Ordering::Relaxed);
-        let (t0, t1) = self.visible_time;
-        if t_now > t1 {
-            self.visible_time = (t0 + 15., t1 + 15.);
-        }
 
         let (n0, n1) = self.note_range;
         if let Some((sn0, sn1)) = self.store.read().unwrap().note_range_u8() {
@@ -156,6 +176,8 @@ impl NoteView {
                 self.note_range = (sn1 - 24.max(diff), sn1);
             }
         }
+        self.zoom_control.update_time((0.0, t_now + 30.0));
+        self.zoom_control.update(1./60.);
     }
 }
 

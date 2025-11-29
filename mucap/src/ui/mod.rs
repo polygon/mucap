@@ -6,6 +6,7 @@ use nih_plug_vizia::{ViziaState, ViziaTheming, assets, create_vizia_editor};
 use std::sync::{Arc, RwLock};
 
 pub mod noteview;
+pub mod zoom_control;
 use noteview::NoteView;
 
 use crate::midistore::MidiStore;

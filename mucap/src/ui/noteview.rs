@@ -15,6 +15,7 @@ pub enum NoteViewEvent {
     Update,
 }
 
+#[derive(Clone)]
 pub struct NoteWindow {
     ///! Provides coordinate translations between time-note space and canvas coordinates
     visible_time: (f32, f32),
@@ -24,12 +25,59 @@ pub struct NoteWindow {
     inverse: vg::Transform2D,
 }
 
+impl NoteWindow {
+    pub fn set_bounds(&mut self, bounds: BoundingBox) {
+        self.bounds = bounds;
+        self.update_transforms();
+    }
+
+    pub fn set_visible_time(&mut self, visible_time: (f32, f32)) {
+        self.visible_time = visible_time;
+        self.update_transforms();
+    }
+
+    pub fn set_note_range(&mut self, note_range: (u8, u8)) {
+        self.note_range = note_range;
+        self.update_transforms();
+    }
+
+    pub fn clone_for_drawing(&self) -> Self {
+        self.clone()
+    }
+
+    fn update_transforms(&mut self) {
+        let (t0, t1) = self.visible_time;
+        let (n0, n1) = self.note_range;
+
+        let X0 = self.bounds.x;
+        let X1 = self.bounds.x + self.bounds.w;
+        let Y0 = self.bounds.y;
+        let Y1 = self.bounds.y + self.bounds.h;
+
+        let x0 = t0;
+        let x1 = t1;
+        let y0 = n1 as f32 + 1.5;
+        let y1 = n0 as f32 - 1.5;
+
+        let ax = (X1 - X0) / (x1 - x0);
+        let bx = X0 - ax * x0;
+        let ay = (Y1 - Y0) / (y1 - y0);
+        let by = Y0 - ay * y0;
+
+        let mut transform = vg::Transform2D::identity();
+        transform.scale(ax, ay);
+        transform.translate(bx, by);
+        self.transform = transform;
+        self.inverse = transform.inversed();
+    }
+}
+
 pub struct NoteView {
     store: Arc<RwLock<MidiStore>>,
     time: Arc<AtomicF32>,
     note_range: (u8, u8),
     zoom_control: ZoomControl,
-    bounds: Arc<RwLock<BoundingBox>>,
+    note_window: RwLock<NoteWindow>,
     mouse_x: f32,
 }
 
@@ -44,7 +92,11 @@ impl NoteView {
             time,
             note_range: (60 - 12, 60 + 11),
             zoom_control: ZoomControl::default(),
-            bounds: Arc::new(RwLock::new(BoundingBox::default())),
+            note_window: RwLock::new(NoteWindow::new(
+                (0.0, 30.0),
+                (60 - 12, 60 + 11),
+                BoundingBox::default(),
+            )),
             mouse_x: 0.0,
         }
         .build(cx, |cx| {
@@ -69,14 +121,18 @@ impl View for NoteView {
     fn draw(&self, cx: &mut DrawContext, canvas: &mut Canvas) {
         //nih_log!("DRAW");
         let b = cx.bounds();
-        if let Ok(mut bounds) = self.bounds.write() {
-            *bounds = b;
+        if let Ok(mut wnd) = self.note_window.write() {
+            wnd.set_bounds(b);
+            wnd.set_visible_time(self.zoom_control.current_range());
+            wnd.set_note_range(self.note_range);
         }
         if b.w == 0.0 || b.h == 0.0 {
             return;
         }
 
-        let wnd = NoteWindow::new(self.zoom_control.current_range(), self.note_range, b);
+        let wnd = {
+            self.note_window.read().unwrap().clone_for_drawing()
+        };
 
         let t_now = self.time.load(Ordering::Relaxed);
         let (t0, t1) = self.zoom_control.current_range();
@@ -146,15 +202,13 @@ impl View for NoteView {
                     self.zoom_control.pan(0.05 * x);
                 }
                 if y.abs() > 0.1 {
-                    if let Ok(bounds) = self.bounds.read()
-                    {
-                        let wnd = NoteWindow::new(self.zoom_control.current_range(), self.note_range, bounds.clone());
+                    if let Ok(wnd) = self.note_window.read() {
                         let center = wnd.x_to_time(self.mouse_x);
                         self.zoom_control.zoom(1.0 - 0.05 * y, center);
                     }
                 }
             },
-            WindowEvent::MouseMove(x, y) => {
+            WindowEvent::MouseMove(x, _y) => {
                 self.mouse_x = *x;
             }
             _ => (),
@@ -183,36 +237,15 @@ impl NoteView {
 
 impl NoteWindow {
     pub fn new(visible_time: (f32, f32), note_range: (u8, u8), bounds: BoundingBox) -> Self {
-        let (t0, t1) = visible_time;
-        let (n0, n1) = note_range;
-
-        let X0 = bounds.x;
-        let X1 = bounds.x + bounds.w;
-        let Y0 = bounds.y;
-        let Y1 = bounds.y + bounds.h;
-
-        let x0 = t0;
-        let x1 = t1;
-        let y0 = n1 as f32 + 1.5;
-        let y1 = n0 as f32 - 1.5;
-
-        let ax = (X1 - Y0) / (x1 - x0);
-        let bx = X0 - ax * x0;
-        let ay = (Y1 - Y0) / (y1 - y0);
-        let by = Y0 - ay * y0;
-
-
-        let mut transform = vg::Transform2D::identity();
-        transform.scale(ax, ay);
-        transform.translate(bx, by);
-        let inverse = transform.inversed();
-        Self {
+        let mut window = Self {
             visible_time,
             note_range,
             bounds,
-            transform,
-            inverse,
-        }
+            transform: vg::Transform2D::identity(),
+            inverse: vg::Transform2D::identity(),
+        };
+        window.update_transforms();
+        window
     }
 
     pub fn note_to_phys(&self, time: f32, key: f32) -> (f32, f32) {

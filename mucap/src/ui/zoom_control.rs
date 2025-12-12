@@ -88,6 +88,13 @@ impl ZoomControl {
         self.cur_range.1 = self.cur_range.1 + (self.target_range.1 - self.cur_range.1) * alpha;
     }
 
+    pub fn set_range(&mut self, range: (f32, f32)) {
+        self.target_range = (
+            range.0.max(self.available_time.0),
+            range.1.min(self.available_time.1),
+        );
+    }
+
     pub fn zoom(&mut self, factor: f32, center: f32) {
         // If a pan was in progress, abandon it
         if self.last_operation == LastOperation::Pan {

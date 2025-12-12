@@ -2304,6 +2304,7 @@ dependencies = [
  "nih_plug_vizia",
  "rand 0.9.2",
  "rand_distr",
+ "tempfile",
 ]
 
 [[package]]

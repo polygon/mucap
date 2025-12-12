@@ -5,40 +5,94 @@ use midly::num::{u4, u7};
 use nih_plug::midi::{NoteEvent, sysex::SysExMessage};
 use nih_plug::nih_log;
 
+use crate::TransportInfo;
+
+/// Information about a MIDI note with links to the NoteOn and NoteOff events
 #[derive(Clone)]
 pub struct Note {
+    /// Start time of the note in seconds.
     pub t_start: f32,
-    idx_on: usize,
+    /// Index of the NoteOn event in the store.
+    pub idx_on: usize,
+    /// End time of the note in seconds.
     pub t_end: f32,
-    idx_off: usize,
-    channel: u4,
+    /// Index of the NoteOff event in the store.
+    pub idx_off: usize,
+    /// MIDI channel (0-15).
+    pub channel: u4,
+    /// MIDI note number (0-127).
     pub key: u7,
-    vel: u7,
+    /// MIDI velocity (0-127).
+    pub vel: u7,
 }
 
+/// A MIDI bar marker with timing information.
+#[derive(Clone, Debug)]
+pub struct Bar {
+    /// Bar number as reported by DAW.
+    pub bar_number: i32,
+    /// Time of the bar start in seconds.
+    pub t: f32,
+}
+
+/// A MIDI event stored in the MidiStore.
 pub enum StoreEntry {
+    /// A MIDI message with its channel.
     MidiData { channel: u4, data: MidiMessage },
 }
 
+/// Stores MIDI events and tracks completed notes, in-flight notes, and timing information.
+///
+/// The MidiStore manages raw MIDI events, constructs complete notes from NoteOn/NoteOff pairs,
+/// and maintains caches of note and time ranges for efficient querying. It also provides information
+/// about the current transport and captures bar events if they are provided.
 pub struct MidiStore {
-    store: Vec<(f32, StoreEntry)>,
+    /// Raw MIDI events stored as (time, entry) tuples, time is never decreasing.
+    pub store: Vec<(f32, StoreEntry)>,
+    /// Completed notes (both NoteOn and NoteOff received).
     pub notes: Vec<Note>,
+    /// Notes that have started but not yet ended (in-flight notes).
     pub in_flight: Vec<Note>,
+    /// Bar markers extracted from transport information.
+    pub bars: Vec<Bar>,
+    /// Last recorded bar start position in beats.
+    last_bar: Option<f64>,
+    /// Cache of minimum and maximum note keys seen so far.
     note_range_cache: Option<(u7, u7)>,
+    /// Cache of minimum and maximum times seen so far.
     time_range_cache: Option<(f32, f32)>,
+    /// Current transport information.
+    pub transport: TransportInfo,
 }
 
 impl MidiStore {
+    /// Creates a new empty MidiStore.
     pub fn new() -> Self {
         Self {
             store: Vec::with_capacity(60000),
             notes: Vec::with_capacity(10000),
+            bars: Vec::with_capacity(1000),
+            last_bar: None,
             in_flight: Vec::with_capacity(128 * 16),
             note_range_cache: None,
             time_range_cache: None,
+            transport: TransportInfo::default(),
         }
     }
 
+    /// Adds a MIDI event to the store at the given time.
+    ///
+    /// # Arguments
+    /// * `time` - Time in seconds. Must be >= the time of the last added event.
+    /// * `data` - MIDI message as a 3-byte array.
+    ///
+    /// # Returns
+    /// Returns `Ok(())` on success, or an error if time ordering is violated.
+    ///
+    /// # Behavior
+    /// - Parses the MIDI message and adds it to the store.
+    /// - For NoteOn/NoteOff messages, updates the in-flight notes list and completed notes list.
+    /// - NoteOn with velocity 0 is treated as NoteOff per MIDI 1.0 specification.
     pub fn add(&mut self, time: f32, data: [u8; 3]) -> Result<()> {
         if time < self.store.last().map(|e| e.0).unwrap_or(0.0) {
             anyhow::bail!("Later entry exists");
@@ -152,21 +206,94 @@ impl MidiStore {
         }
     }
 
+    /// Returns the minimum and maximum MIDI note numbers seen in completed notes.
+    ///
+    /// Returns `None` if no notes have been completed yet.
     pub fn note_range(&self) -> Option<(u7, u7)> {
         self.note_range_cache
     }
 
+    /// Returns the note range as u8 values instead of u7.
+    ///
+    /// Returns `None` if no notes have been completed yet.
     pub fn note_range_u8(&self) -> Option<(u8, u8)> {
         self.note_range_cache.map(|(n0, n1)| (n0.as_int(), n1.as_int()))
     }
 
 
+    /// Returns the minimum and maximum times in seconds seen in completed notes.
+    ///
+    /// Returns `None` if no notes have been completed yet.
     pub fn time_range(&self) -> Option<(f32, f32)> {
         self.time_range_cache
     }
 
+    /// Returns an iterator of all notes that overlap with the time range [t0, t1].
+    ///
+    /// A note overlaps if `t0 < note.t_end && t1 > note.t_start`.
     pub fn notes_in_time(&self, t0: f32, t1: f32) -> impl Iterator<Item = &Note> {
         self.notes.iter().filter(move |note| (t0 < note.t_end) && (t1 > note.t_start))
+    }
+
+    /// Returns an iterator of notes in [t0, t1] paired with a boolean indicating if they're selected.
+    ///
+    /// A note is considered "selected" if it overlaps with [sel_t0, sel_t1].
+    pub fn notes_in_time_select(&self, t0: f32, t1: f32, sel_t0: f32, sel_t1: f32) -> impl Iterator<Item = (&Note, bool)> {
+        self.notes_in_time(t0, t1).map(move |note| (note, sel_t0 < note.t_end && sel_t1 > note.t_start))
+    }
+
+    /// Returns an iterator over all MIDI events as (index, time, channel, message) tuples.
+    pub fn midi_events(&self) -> impl Iterator<Item = (usize, f32, u4, MidiMessage)> {
+        self.store.iter().enumerate().map(|(idx, (time, entry))| {
+            match entry {
+                StoreEntry::MidiData { channel, data } => (idx, *time, *channel, *data)
+            }
+        })
+    }
+
+    /// Adds a bar marker based on the provided transport information.
+    ///
+    /// Calculates the bar number and time, then adds it to the bars list.
+    /// Duplicate consecutive bars (within 0.01 beats) are skipped.
+    pub fn add_bar(&mut self, transport: TransportInfo) {
+        self.transport = transport;
+        if !self.transport.playing {
+            self.last_bar = None;
+            return;
+        }
+        if let Some(last_bar) = self.last_bar {
+            if (self.transport.bar_start_pos_beats - last_bar).abs() < 0.01 {
+                return;
+            }
+        }
+        nih_log!("self.transport Info: {:?}", self.transport);
+        self.last_bar = Some(self.transport.bar_start_pos_beats);
+        let t = self.transport.time - (self.transport.pos_beats as f32 - self.transport.bar_start_pos_beats as f32) * 60. / self.transport.tempo as f32;
+        let beats_per_bar = 4. * self.transport.time_sig.0 as f32 / self.transport.time_sig.1 as f32;
+        let bar_number = (self.transport.bar_start_pos_beats as f32 / beats_per_bar).round() as i32;
+
+        let bar = Bar {
+            bar_number,
+            t
+        };
+
+        nih_log!("Add Bar: {:?}: {}, {}", bar, self.transport.time, t);
+        self.bars.push(bar);
+    }
+
+    /// Returns an iterator of bars whose bar_number is divisible by n.
+    ///
+    /// Useful for filtering to only major bars (e.g., every 4th bar).
+    pub fn get_bars(&self, n: i32) -> impl Iterator<Item = &Bar> {
+        self.bars.iter().filter(move |bar| bar.bar_number % n == 0)
+    }
+
+    /// Finds the nearest bar (filtered by n) to the given time.
+    ///
+    /// Returns the bar whose time is closest to the given time,
+    /// considering only bars where bar_number % n == 0.
+    pub fn nearest_bar(&self, time: f32, n: i32) -> Option<&Bar> {
+        self.get_bars(n).reduce(|b1, b2| if (b1.t - time).abs() < (b2.t - time).abs() { b1 } else { b2 })
     }
 }
 

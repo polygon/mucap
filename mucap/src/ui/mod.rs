@@ -7,6 +7,7 @@ use std::sync::{Arc, RwLock};
 
 pub mod noteview;
 pub mod zoom_control;
+pub mod miditransfer;
 use noteview::NoteView;
 
 use crate::midistore::MidiStore;
@@ -21,7 +22,7 @@ struct Data {
 impl Model for Data {}
 
 pub(crate) fn default_state() -> Arc<ViziaState> {
-    ViziaState::new(|| (1920, 800))
+    ViziaState::new_with_default_scale_factor(|| (700, 200), 2.0)
 }
 
 pub(crate) fn create(

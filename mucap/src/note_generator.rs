@@ -16,7 +16,7 @@ pub struct NoteGenerator {
     stddev: f32,
     exp_note_dist: f32,
     exp_note_length: f32,
-    rng: Option<rand::rngs::SmallRng>,
+    pub rng: Option<rand::rngs::SmallRng>,
 }
 
 impl Default for NoteGenerator {

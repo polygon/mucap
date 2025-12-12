@@ -1,5 +1,6 @@
 use nih_plug::{midi::MidiResult, prelude::*};
 use nih_plug_vizia::ViziaState;
+use rand::Rng;
 use std::sync::{Arc, RwLock, atomic::Ordering, mpsc};
 
 mod midistore;
@@ -18,8 +19,8 @@ pub struct Mucap {
     samples: Samples,
     time: Arc<AtomicF32>,
     store: Arc<RwLock<MidiStore>>,
-    tx: Option<mpsc::SyncSender<(f32, [u8; 3])>>,
-    note_delivery_thread: Option<std::thread::JoinHandle<()>>,
+    tx: Option<mpsc::SyncSender<StoreMessage>>,
+    store_delivery_thread: Option<std::thread::JoinHandle<()>>,
     generator: NoteGenerator,
 }
 
@@ -38,7 +39,7 @@ impl Default for Mucap {
             time: Arc::new(AtomicF32::new(0.0)),
             store: store.clone(),
             tx: None,
-            note_delivery_thread: None,
+            store_delivery_thread: None,
             generator: NoteGenerator::default(),
         }
     }
@@ -52,20 +53,88 @@ impl Default for MucapParams {
     }
 }
 
-pub struct NoteDeliveryTask {
-    rx: mpsc::Receiver<(f32, [u8; 3])>,
+// TODO: Currently very tweaked for Bitwig
+#[derive(Debug, Default)]
+pub struct TransportInfo {
+    pub time: f32,
+    pub playing: bool,
+    pub sample_rate: f32,
+    pub tempo: f64,
+    pub time_sig: (i32, i32),
+    pub pos_samples: i64,
+    pub pos_beats: f64,
+    pub bar_start_pos_beats: f64,
+}
+
+impl TransportInfo {
+    pub fn from_transport(transport: &Transport, time: f32) -> Option<Self> {
+        let Some(tempo) = transport.tempo else {
+            return None;
+        };
+        let Some(time_sig_numerator) = transport.time_sig_numerator else {
+            return None;
+        };
+        let Some(time_sig_denominator) = transport.time_sig_denominator else {
+            return None;
+        };
+        let Some(pos_samples) = transport.pos_samples() else {
+            return None;
+        };
+        let Some(pos_beats) = transport.pos_beats() else {
+            return None;
+        };
+        let Some(bar_start_pos_beats) = transport.bar_start_pos_beats() else {
+            return None;
+        };
+        Some(Self {
+            time,
+            playing: transport.playing,
+            sample_rate: transport.sample_rate,
+            tempo,
+            time_sig: (time_sig_numerator, time_sig_denominator),
+            pos_samples,
+            pos_beats,
+            bar_start_pos_beats,
+        })
+    }
+
+    pub fn bar_length(&self) -> f32 {
+        let beats_per_bar = 4. * self.time_sig.0 as f32 / self.time_sig.1 as f32;
+        beats_per_bar * self.beat_length()
+    }
+    
+    pub fn beat_length(&self) -> f32 {
+        60. / self.tempo as f32
+    }
+}
+
+pub enum StoreMessage {
+    MidiData(f32, [u8; 3]),
+    TransportInfo(TransportInfo),
+}
+
+pub struct StoreDeliveryTask {
+    rx: mpsc::Receiver<StoreMessage>,
     store: Arc<RwLock<MidiStore>>,
 }
 
-impl NoteDeliveryTask {
+impl StoreDeliveryTask {
     fn run(&mut self) {
         nih_log!("Hello from the background");
-        while let Ok((time, event)) = self.rx.recv() {
-            self.store
-                .write()
-                .unwrap()
-                .add(time, event)
-                .expect("Failed to add event");
+        while let Ok(msg) = self.rx.recv() {
+            use StoreMessage::*;
+            match msg {
+                MidiData(time, event) => {
+                    self.store
+                        .write()
+                        .unwrap()
+                        .add(time, event)
+                        .expect("Failed to add event");
+                }
+                TransportInfo(trx) => {
+                    self.store.write().unwrap().add_bar(trx);
+                }
+            }
         }
     }
 }
@@ -86,14 +155,18 @@ impl Plugin for Mucap {
     const SAMPLE_ACCURATE_AUTOMATION: bool = true;
 
     type SysExMessage = ();
-    type BackgroundTask = NoteDeliveryTask;
+    type BackgroundTask = StoreDeliveryTask;
 
     fn params(&self) -> Arc<dyn Params> {
         self.params.clone()
     }
 
     fn editor(&mut self, _async_executor: AsyncExecutor<Self>) -> Option<Box<dyn Editor>> {
-        ui::create(self.params.editor_state.clone(), self.store.clone(), self.time.clone())
+        ui::create(
+            self.params.editor_state.clone(),
+            self.store.clone(),
+            self.time.clone(),
+        )
     }
 
     fn initialize(
@@ -102,11 +175,11 @@ impl Plugin for Mucap {
         _buffer_config: &BufferConfig,
         _context: &mut impl InitContext<Self>,
     ) -> bool {
-        if self.note_delivery_thread.is_none() {
+        if self.store_delivery_thread.is_none() {
             let (tx, rx) = mpsc::sync_channel(16);
             let store = self.store.clone();
-            self.note_delivery_thread = Some(std::thread::spawn(|| {
-                let mut task = NoteDeliveryTask { rx, store };
+            self.store_delivery_thread = Some(std::thread::spawn(|| {
+                let mut task = StoreDeliveryTask { rx, store };
                 task.run();
             }));
             self.tx = Some(tx);
@@ -126,7 +199,11 @@ impl Plugin for Mucap {
             let ev_samples = self.samples + event.timing() as i64;
             let ev_time = ev_samples as f32 / context.transport().sample_rate;
             if let Some(MidiResult::Basic(buf)) = event.as_midi() {
-                self.store.write().unwrap().add(ev_time, buf).unwrap_or(());
+                self.tx
+                    .iter_mut()
+                    .map(|tx| tx.send(StoreMessage::MidiData(ev_time, buf)).unwrap_or(()))
+                    .next()
+                    .unwrap_or(());
             }
             //nih_log!("Event @ {:.6}: {:?}", ev_time, event.as_midi());
         }
@@ -136,14 +213,28 @@ impl Plugin for Mucap {
             .generate(buffer.samples() as f32 / context.transport().sample_rate)
         {
             let ev_time = self.samples as f32 / context.transport().sample_rate;
-            self.store.write().unwrap().add(ev_time, buf).unwrap_or(());
+            /*self.tx
+                .iter_mut()
+                .map(|tx| tx.send(StoreMessage::MidiData(ev_time, buf)).unwrap_or(()))
+                .next()
+                .unwrap_or(());*/
         }
 
+        let t_old = self.time.load(Ordering::SeqCst);
         self.samples += buffer.samples() as Samples;
-        self.time.store(
-            self.samples as f32 / context.transport().sample_rate,
-            Ordering::Relaxed,
-        );
+        let t_now = self.samples as f32 / context.transport().sample_rate;
+        self.time.store(t_now, Ordering::SeqCst);
+
+        let mut rng = self.generator.rng.take().unwrap();
+        if rng.random_bool(0.003) {
+            nih_log!("Transport: {:?}", context.transport());
+        }
+        self.generator.rng = Some(rng);
+        if let Some(ti) = TransportInfo::from_transport(context.transport(), t_old) {
+            if let Some(tx) = &self.tx {
+                tx.send(StoreMessage::TransportInfo(ti)).unwrap_or(());
+            }
+        }
 
         ProcessStatus::Normal
     }

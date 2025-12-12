@@ -5,8 +5,10 @@ use std::fs;
 use midly::Smf;
 
 fn main() {
-    let data = fs::read("/home/jan/test.mid").unwrap();
+    let data = fs::read("/home/jan/lala.mid").unwrap();
     let mut smf = Smf::parse(&data).unwrap();
+    println!("{:?}", smf);
+    return;
     smf.header.format = midly::Format::SingleTrack;
     smf.header.timing = midly::Timing::Timecode(midly::Fps::Fps25, 40);
     smf.save("/home/jan/test1.mid").unwrap();

@@ -105,7 +105,10 @@ impl MidiTransfers {
 
         // Write Note-Ons already active at start
         for (note, sel) in store.notes_in_time_select(-f32::INFINITY, f32::INFINITY, t0, t1) {
-            if sel && note.t_start < t0 {
+            // Skip notes with very short tails that would end on tick 0 as these can
+            // cause artifacts (seen in Bitwig Studio)
+            let end_tick = ((note.t_end - t0) * pps).round() as i64;
+            if sel && note.t_start < t0 && end_tick > 0 {
                 if let Some(entry) = store.store.get(note.idx_on) {
                     let StoreEntry::MidiData { channel, data } = entry.1;
                     smf.tracks[0].push(TrackEvent {
@@ -145,8 +148,8 @@ impl MidiTransfers {
         // Write Note-Off at end of selection
         let track_time = t1 - t0;
         let best_track_quantized = (track_time * pps).round() as i64;
-        let delta = ((best_track_quantized - sum_delta) as u32).saturating_sub(1);
-        sum_delta = best_track_quantized;
+        let mut delta_end = ((best_track_quantized - sum_delta) as u32).saturating_sub(1);
+        /*sum_delta = best_track_quantized;
         smf.tracks[0].push(TrackEvent {
             delta: u28::new(delta),
             kind: TrackEventKind::Midi {
@@ -156,7 +159,7 @@ impl MidiTransfers {
                     vel: 1.into(),
                 },
             },
-        });
+        });*/
 
         nih_log!(
             "t0: {}, t1: {}, tdiff: {}, sum_delta: {}",
@@ -172,17 +175,19 @@ impl MidiTransfers {
                 if let Some(entry) = store.store.get(note.idx_off) {
                     let StoreEntry::MidiData { channel, data } = entry.1;
                     smf.tracks[0].push(TrackEvent {
-                        delta: u28::new(0),
+                        delta: u28::new(delta_end),
                         kind: TrackEventKind::Midi {
                             channel,
                             message: data,
                         },
                     });
+                    sum_delta += delta_end as i64;
+                    delta_end = 0;
                 }
             }
         }
 
-        let bar_len_pulses = (pps * transport.bar_length()).round() as i64;
+        /*let bar_len_pulses = (pps * transport.bar_length()).round() as i64;
         let abs_delta = (((sum_delta % bar_len_pulses) - bar_len_pulses) % bar_len_pulses).abs();
         if abs_delta > 10 {
             nih_log!(
@@ -200,9 +205,9 @@ impl MidiTransfers {
                     },
                 },
             });
-        };
+        };*/
         smf.tracks[0].push(TrackEvent {
-            delta: u28::new(0),
+            delta: u28::new(delta_end),
             kind: TrackEventKind::Meta(midly::MetaMessage::EndOfTrack),
         });
         if let Ok(_) = smf.save(&midifile.path()) {

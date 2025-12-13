@@ -12,6 +12,7 @@ use nih_plug_vizia::vizia::prelude::*;
 use nih_plug_vizia::vizia::vg;
 
 use super::miditransfer::MidiTransfers;
+use super::style::StyleColors;
 
 pub enum SelectionState {
     None,
@@ -94,6 +95,7 @@ pub struct NoteView {
     t_last_op: f32,
     transfers: MidiTransfers,
     snap: SnapMode,
+    colors: StyleColors,
 }
 
 impl NoteView {
@@ -116,6 +118,7 @@ impl NoteView {
             t_last_op: 0.0,
             transfers: MidiTransfers::new(store.clone()),
             snap: SnapMode::Snapping,
+            colors: StyleColors::default(),
         }
         .build(cx, |cx| {
             nih_log!("Spawning Timer Worker!");
@@ -167,8 +170,8 @@ impl View for NoteView {
             b.h,
             b.h / 4.,
             b.h / 4.,
-            vg::Color::rgb(16, 16, 42),
-            vg::Color::rgb(0, 0, 16),
+            self.colors.bg_light,
+            self.colors.bg_dark,
         );
         canvas.fill_path(&path, &paint);
 
@@ -191,8 +194,8 @@ impl View for NoteView {
                 h,
                 h,
                 h,
-                vg::Color::rgba(128, 64, 12, 255),
-                vg::Color::rgba(128, 64, 12, 0),
+                self.colors.bar_glow_bright,
+                self.colors.bar_glow_dim,
             );
             canvas.stroke_path(&bar_path, &bar_paint);
         }
@@ -222,10 +225,10 @@ impl View for NoteView {
                 sel_x1,
                 0.,
                 [
-                    (0.0, vg::Color::rgba(64, 255, 16, 60)),
-                    (0.2, vg::Color::rgba(92, 92, 24, 40)),
-                    (0.8, vg::Color::rgba(92, 192, 24, 40)),
-                    (1.0, vg::Color::rgba(64, 255, 16, 60)),
+                    (0.0, self.colors.selection_bright),
+                    (0.2, self.colors.selection_mid_dim),
+                    (0.8, self.colors.selection_mid_bright),
+                    (1.0, self.colors.selection_bright),
                 ],
             );
             canvas.fill_path(&sel_path, &sel_fill);
@@ -245,7 +248,6 @@ impl View for NoteView {
             let (sel_x0, sel_x1) = (wnd.time_to_x_coerced(sel_t0), wnd.time_to_x_coerced(sel_t1));
             let c0 = (sel_x0 - b.x) / b.w;
             let c1 = (sel_x1 - b.x) / b.w;
-            vg::Paint::color(vg::Color::rgb(120, 220, 12));
             let feather = (0.005 as f32).min((sel_x1 - sel_x0).abs() / 5000.0);
             vg::Paint::linear_gradient_stops(
                 b.x + 1.0,
@@ -253,18 +255,18 @@ impl View for NoteView {
                 b.w + b.x + 1.0,
                 0.,
                 [
-                    (0.0, vg::Color::rgb(220, 120, 12)),
-                    (c0-feather, vg::Color::rgb(220, 120, 12)),
-                    (c0+feather, vg::Color::rgb(120, 220, 12)),
-                    (c1-feather, vg::Color::rgb(120, 220, 12)),
-                    (c1+feather, vg::Color::rgb(220, 120, 12)),
-                    (1.0, vg::Color::rgb(220, 120, 12)),
+                    (0.0, self.colors.note_unselected),
+                    (c0-feather, self.colors.note_unselected),
+                    (c0+feather, self.colors.note_selected_bright),
+                    (c1-feather, self.colors.note_selected_bright),
+                    (c1+feather, self.colors.note_unselected),
+                    (1.0, self.colors.note_unselected),
                 ],
             )
         } else {
-            vg::Paint::color(vg::Color::rgb(220, 120, 12))
+            vg::Paint::color(self.colors.note_unselected)
         };
-        let rim_paint = vg::Paint::color(vg::Color::rgb(232, 232, 232)).with_line_width(1.0);
+        let rim_paint = vg::Paint::color(self.colors.note_rim).with_line_width(1.0);
         canvas.fill_path(&note_path, &note_paint);
         canvas.stroke_path(&note_path, &rim_paint);
 
@@ -281,10 +283,10 @@ impl View for NoteView {
             x1,
             0.,
             [
-                (0.0, vg::Color::rgba(92, 92, 128, 0)),
-                (0.5, vg::Color::rgba(92, 92, 128, 64)),
-                (0.75, vg::Color::rgba(92, 92, 128, 128)),
-                (1.0, vg::Color::rgba(92, 92, 128, 255)),
+                (0.0, self.colors.playhead_transparent),
+                (0.5, self.colors.playhead_semi),
+                (0.75, self.colors.playhead_opaque),
+                (1.0, self.colors.playhead_base),
             ],
         );
 
@@ -292,7 +294,7 @@ impl View for NoteView {
             let px = self.snap(mouse_pos.0);
             let mut cursor_bar = vg::Path::new();
             cursor_bar.rect(px - 0.5, b.y, 1.0, b.h);
-            let cursor_paint = vg::Paint::color(vg::Color::rgba(156, 156, 156, 172));
+            let cursor_paint = vg::Paint::color(self.colors.cursor);
             canvas.stroke_path(&cursor_bar, &cursor_paint);
         }
 

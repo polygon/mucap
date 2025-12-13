@@ -8,6 +8,7 @@ use std::sync::{Arc, RwLock};
 pub mod noteview;
 pub mod zoom_control;
 pub mod miditransfer;
+pub mod style;
 use noteview::NoteView;
 
 use crate::midistore::MidiStore;

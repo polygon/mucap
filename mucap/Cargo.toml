@@ -15,3 +15,14 @@ anyhow = "1.0.100"
 rand = "0.9.2"
 rand_distr = "0.5.1"
 tempfile = "3.23.0"
+
+[package.metadata.deb]
+author = "polygon"
+maintainer = "polygon"
+section = "sound"
+depends = "$auto"
+assets = [
+    ["target/release/mucap", "usr/bin/mucap", "755"],
+    ["target/release/mucap.vst3/Contents/x86_64-linux/mucap.so", "usr/lib/vst3/mucap.vst3/Contents/x86_64-linux/mucap.so", "755"],
+    ["target/release/mucap.clap", "usr/lib/clap/mucap.clap", "755"],
+]

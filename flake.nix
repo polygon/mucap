@@ -48,32 +48,34 @@
         LD_LIBRARY_PATH = pkgs.lib.makeLibraryPath [ pkgs.alsa-lib ];
       };
 
-      packages.${system}.mucap = naersk-lib.buildPackage {
-        pname = "mucap";
-        root = ./.;
-        buildInputs = runtime-deps;
-        nativeBuildInputs = build-deps;
-        overrideMain = attrs: {
-          postBuild = ''
-            cargo xtask bundle mucap --release
-          '';
-          installPhase = ''
-            mkdir -p $out/bin
-            cp target/bundled/mucap $out/bin/mucap
-            mkdir -p $out/lib/vst3
-            mkdir -p $out/lib/clap
-            cp target/bundled/mucap.clap $out/lib/clap
-            cp -r target/bundled/mucap.vst3 $out/lib/vst3
-          '';
-          #fixupPhase = ''
-          #  wrapProgram $out/bin/${program_name} \
-          #    --prefix LD_LIBRARY_PATH : ${
-          #      pkgs.lib.makeLibraryPath runtime-deps
-          #    }
-          #'';
-          #patchPhase = ''
-          #   sed -i s/\"dynamic\"// Cargo.toml
-          #'';
+      packages.${system} = {
+        mucap = naersk-lib.buildPackage {
+          pname = "mucap";
+          root = ./.;
+          buildInputs = runtime-deps;
+          nativeBuildInputs = build-deps;
+          overrideMain = attrs: {
+            postBuild = ''
+              cargo xtask bundle mucap --release
+            '';
+            installPhase = ''
+              mkdir -p $out/bin
+              cp target/bundled/mucap $out/bin/mucap
+              mkdir -p $out/lib/vst3
+              mkdir -p $out/lib/clap
+              cp target/bundled/mucap.clap $out/lib/clap
+              cp -r target/bundled/mucap.vst3 $out/lib/vst3
+            '';
+            #fixupPhase = ''
+            #  wrapProgram $out/bin/${program_name} \
+            #    --prefix LD_LIBRARY_PATH : ${
+            #      pkgs.lib.makeLibraryPath runtime-deps
+            #    }
+            #'';
+            #patchPhase = ''
+            #   sed -i s/\"dynamic\"// Cargo.toml
+            #'';
+          };
         };
       };
 

@@ -85,6 +85,11 @@ pub enum SnapMode {
     Off,
 }
 
+pub enum VScrollMode {
+    Zoom,
+    Pan,
+}
+
 pub struct NoteView {
     store: Arc<RwLock<MidiStore>>,
     time: Arc<AtomicF32>,
@@ -95,6 +100,7 @@ pub struct NoteView {
     t_last_op: f32,
     transfers: MidiTransfers,
     snap: SnapMode,
+    vscroll: VScrollMode,
     colors: StyleColors,
 }
 
@@ -117,6 +123,7 @@ impl NoteView {
             selection: SelectionState::None,
             t_last_op: 0.0,
             transfers: MidiTransfers::new(store.clone()),
+            vscroll: VScrollMode::Zoom,
             snap: SnapMode::Snapping,
             colors: StyleColors::default(),
         }
@@ -319,13 +326,21 @@ impl View for NoteView {
                     self.t_last_op = t_now;
                 }
                 if y.abs() > 0.1 {
+                    use VScrollMode::*;
+                    match self.vscroll {
+                        Zoom => {
                     if let Some(mouse) = self.mouse_pos {
                         if let Ok(wnd) = self.note_window.read() {
                             let center = wnd.x_to_time(mouse.0);
                             self.zoom_control.zoom(1.0 - 0.05 * y, center);
-                            self.t_last_op = t_now;
+                        }
+                    }                           
+                        },
+                        Pan => {
+                            self.zoom_control.pan(0.05 * y);
                         }
                     }
+                    self.t_last_op = t_now;
                 }
             }
             WindowEvent::MouseMove(x, y) => {
@@ -376,6 +391,7 @@ impl View for NoteView {
                 match key {
                     Some(Key::Shift) => {
                         self.snap = SnapMode::Off;
+                        self.vscroll = VScrollMode::Pan;
                     }
                     _ => ()
                 }
@@ -385,6 +401,7 @@ impl View for NoteView {
                 match key {
                     Some(Key::Shift) => {
                         self.snap = SnapMode::Snapping;
+                        self.vscroll = VScrollMode::Zoom;
                     }
                     _ => ()
                 }

@@ -161,13 +161,13 @@ impl MidiTransfers {
             },
         });*/
 
-        nih_log!(
+        /*nih_log!(
             "t0: {}, t1: {}, tdiff: {}, sum_delta: {}",
             t0,
             t1,
             t1 - t0,
             sum_delta
-        );
+        );*/
 
         // Write Note-Offs for incomplete notes
         for (note, sel) in store.notes_in_time_select(-f32::INFINITY, f32::INFINITY, t0, t1) {
@@ -216,7 +216,7 @@ impl MidiTransfers {
             nih_warn!("Error saving MIDI file");
             return;
         }
-        nih_log!("{:?}", smf);
+        //nih_log!("{:?}", smf);
 
         if self.clippy.is_none() {
             let Ok(mut clippy) = Clipboard::new() else {

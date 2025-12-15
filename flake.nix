@@ -26,6 +26,7 @@
         lldb
         cargo-geiger
         cargo-flamegraph
+        fpm
       ];
       build-deps = with pkgs; [ pkg-config python3 ];
       runtime-deps = with pkgs; [

@@ -1,5 +1,5 @@
 # Dockerfile
-FROM debian:testing 
+FROM debian:stable 
 ENV DEBIAN_FRONTEND noninteractive
 RUN apt-get update && apt-get install -y \
     build-essential \
@@ -7,7 +7,6 @@ RUN apt-get update && apt-get install -y \
     rustup \
     pkg-config
 RUN rustup toolchain install stable
-RUN cargo install cargo-deb
 RUN apt-get install -y \
     libgl-dev \
     libx11-xcb-dev \

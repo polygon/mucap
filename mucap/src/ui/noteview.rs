@@ -7,7 +7,7 @@ use crate::config::ConfigStore;
 use crate::midistore::MidiStore;
 use crate::midistore::Note;
 use crate::ui::zoom_control::ZoomControl;
-use nih_plug::nih_log;
+use nih_plug::nih_dbg;
 use nih_plug::prelude::AtomicF32;
 use nih_plug_vizia::vizia::prelude::*;
 use nih_plug_vizia::vizia::vg;
@@ -134,13 +134,13 @@ impl NoteView {
             resize_event: None,
         }
         .build(cx, |cx| {
-            nih_log!("Spawning Timer Worker!");
+            nih_dbg!("Spawning Timer Worker!");
             cx.spawn(|cx| {
-                nih_log!("Timer worker spawned!");
+                nih_dbg!("Timer worker spawned!");
                 while let Ok(_) = cx.emit(NoteViewEvent::Update) {
                     std::thread::sleep(std::time::Duration::from_secs_f32(1. / 60.));
                 }
-                nih_log!("Timer worker terminating!");
+                nih_dbg!("Timer worker terminating!");
             });
             //Label::new(cx, "This is a custom view!");
         })
@@ -320,7 +320,7 @@ impl View for NoteView {
         });
 
         if cx.focused() != cx.current() {
-            nih_log!("Focusing");
+            nih_dbg!("Focusing");
             cx.focus();
         }
 
@@ -384,7 +384,7 @@ impl View for NoteView {
                         };
                         if let SelectionState::Selected(t0, t1) = self.selection {
                             let store = self.store.read().unwrap();
-                            nih_log!("Pre-Export transport: {:?}", store.transport);
+                            nih_dbg!("Pre-Export transport: {:?}", &store.transport);
                             self.transfers.new_selection(t0, t1, &store.transport);
                             self.t_last_op = t_now;
                         }
@@ -393,7 +393,7 @@ impl View for NoteView {
                 }
             }
             WindowEvent::KeyDown(code, key) => {
-                nih_log!("Key Down: {:?}, {:?}", code, key);
+                nih_dbg!("Key Down: {:?}, {:?}", code, key);
                 match key {
                     Some(Key::Shift) => {
                         self.snap = SnapMode::Off;
@@ -403,7 +403,7 @@ impl View for NoteView {
                 }
             }
             WindowEvent::KeyUp(code, key) => {
-                nih_log!("Key Up: {:?}, {:?}", code, key);
+                nih_dbg!("Key Up: {:?}, {:?}", code, key);
                 match key {
                     Some(Key::Shift) => {
                         self.snap = SnapMode::Snapping;
@@ -415,7 +415,9 @@ impl View for NoteView {
             WindowEvent::GeometryChanged(_) => {
                 self.resize_event = Some((t_now, cx.scale_factor()))
             }
-            ev => nih_log!("Window Event: {:?}", ev),
+            ev => {
+                nih_dbg!("Window Event: {:?}", ev);
+            },
         });
     }
 }

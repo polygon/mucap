@@ -13,7 +13,7 @@ use midly::{
     MetaMessage, MidiMessage, Track, TrackEvent, TrackEventKind,
     num::{u4, u15, u24, u28},
 };
-use nih_plug::{nih_error, nih_log, nih_warn};
+use nih_plug::{nih_error, nih_dbg, nih_warn};
 use tempfile::{Builder, NamedTempFile};
 
 pub struct MidiTransfers {
@@ -83,7 +83,7 @@ impl MidiTransfers {
             return;
         };
 
-        nih_log!("Created MIDI file: {:?}", midifile.path());
+        nih_dbg!("Created MIDI file: {:?}", midifile.path());
 
         let mut of = midifile.as_file_mut();
         let ppqn = 480;
@@ -211,16 +211,16 @@ impl MidiTransfers {
             kind: TrackEventKind::Meta(midly::MetaMessage::EndOfTrack),
         });
         if let Ok(_) = smf.save(&midifile.path()) {
-            nih_log!("Saved MIDI file: {:?}", midifile.path());
+            nih_dbg!("Saved MIDI file: {:?}", midifile.path());
         } else {
             nih_warn!("Error saving MIDI file");
             return;
         }
-        //nih_log!("{:?}", smf);
+        //nih_dbg!("{:?}", smf);
 
         if self.clippy.is_none() {
             let Ok(mut clippy) = Clipboard::new() else {
-                nih_log!("Error acquiring clipboard");
+                nih_dbg!("Error acquiring clipboard");
                 return;
             };
             self.clippy = Some(clippy);
@@ -233,7 +233,7 @@ impl MidiTransfers {
             .set()
             .file_list(&[midifile.path()])
         {
-            nih_log!("Copied path {:?} to clipboard", midifile.path());
+            nih_dbg!("Copied path {:?} to clipboard", midifile.path());
         } else {
             nih_warn!("Failed to copy to clipboard");
             return;

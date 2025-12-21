@@ -3,7 +3,7 @@ use midly::MidiMessage;
 use midly::live::LiveEvent;
 use midly::num::{u4, u7};
 use nih_plug::midi::{NoteEvent, sysex::SysExMessage};
-use nih_plug::nih_log;
+use nih_plug::nih_dbg;
 
 use crate::TransportInfo;
 
@@ -167,7 +167,7 @@ impl MidiStore {
                 let mut note = self.in_flight.remove(idx);
                 note.idx_off = idx_off;
                 note.t_end = time;
-                nih_log!(
+                nih_dbg!(
                     "New note {} ({}), {:.2} s, starting at {:.2}",
                     note.key,
                     note.channel,
@@ -177,7 +177,7 @@ impl MidiStore {
                 self.update_ranges(note.key, note.t_end);
                 self.notes.push(note);
             } else {
-                nih_log!("Note Off without Note On @ {:.6}", time);
+                nih_dbg!("Note Off without Note On @ {:.6}", time);
             }
         }
     }
@@ -266,7 +266,7 @@ impl MidiStore {
                 return;
             }
         }
-        nih_log!("self.transport Info: {:?}", self.transport);
+        nih_dbg!("self.transport Info: {:?}", &self.transport);
         self.last_bar = Some(self.transport.bar_start_pos_beats);
         let t = self.transport.time - (self.transport.pos_beats as f32 - self.transport.bar_start_pos_beats as f32) * 60. / self.transport.tempo as f32;
         let beats_per_bar = 4. * self.transport.time_sig.0 as f32 / self.transport.time_sig.1 as f32;
@@ -277,7 +277,7 @@ impl MidiStore {
             t
         };
 
-        nih_log!("Add Bar: {:?}: {}, {}", bar, self.transport.time, t);
+        nih_dbg!("Add Bar: {:?}: {}, {}", &bar, self.transport.time, t);
         self.bars.push(bar);
     }
 

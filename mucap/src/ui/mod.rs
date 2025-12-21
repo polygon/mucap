@@ -1,4 +1,4 @@
-use nih_plug::{nih_log, nih_dbg};
+use nih_plug::nih_dbg;
 use nih_plug::prelude::{AtomicF32, Editor};
 use nih_plug_vizia::vizia::prelude::*;
 use nih_plug_vizia::widgets::*;
@@ -55,7 +55,7 @@ pub(crate) fn create(
                 .child_bottom(Pixels(0.0))
                 .on_drag(|cx| {
                     cx.set_drop_data(DropData::File("/home/jan/test.mid".into()));
-                    nih_log!(
+                    nih_dbg!(
                         "Drag started: {}, {}",
                         cx.is_draggable(),
                         cx.has_drop_data()
@@ -69,7 +69,7 @@ pub(crate) fn create(
                 .child_top(Stretch(1.0))
                 .child_bottom(Pixels(0.0))
                 .on_drop(|cx, data| {
-                    nih_log!("Drop started: {:?}", data);
+                    nih_dbg!("Drop started: {:?}", data);
                 });*/
             NoteView::new(cx, store.clone(), config.clone(), time.clone())
                 .width(Stretch(1.0))
@@ -79,6 +79,6 @@ pub(crate) fn create(
         .height(Stretch(1.0));
 
         ResizeHandle::new(cx);
-        nih_log!("User Scale Factor at start: {}", cx.user_scale_factor());
+        nih_dbg!("User Scale Factor at start: {}", cx.user_scale_factor());
     })
 }

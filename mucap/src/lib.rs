@@ -1,4 +1,4 @@
-use nih_plug::{midi::MidiResult, prelude::*};
+use nih_plug::{midi::MidiResult, prelude::*, nih_dbg};
 use nih_plug_vizia::ViziaState;
 use rand::Rng;
 use std::sync::{Arc, RwLock, atomic::Ordering, mpsc};
@@ -121,7 +121,7 @@ pub struct StoreDeliveryTask {
 
 impl StoreDeliveryTask {
     fn run(&mut self) {
-        nih_log!("Hello from the background");
+        nih_dbg!("Hello from the background");
         while let Ok(msg) = self.rx.recv() {
             use StoreMessage::*;
             match msg {
@@ -229,7 +229,7 @@ impl Plugin for Mucap {
 
         let mut rng = self.generator.rng.take().unwrap();
         if rng.random_bool(0.003) {
-            nih_log!("Transport: {:?}", context.transport());
+            nih_dbg!("Transport: {:?}", context.transport());
         }
         self.generator.rng = Some(rng);
         if let Some(ti) = TransportInfo::from_transport(context.transport(), t_old) {

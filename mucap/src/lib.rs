@@ -5,10 +5,13 @@ use std::sync::{Arc, RwLock, atomic::Ordering, mpsc};
 
 mod midistore;
 mod note_generator;
+mod config;
 mod ui;
 
 use midistore::MidiStore;
 use note_generator::NoteGenerator;
+
+use crate::config::ConfigStore;
 
 type Samples = i64;
 
@@ -19,6 +22,7 @@ pub struct Mucap {
     samples: Samples,
     time: Arc<AtomicF32>,
     store: Arc<RwLock<MidiStore>>,
+    config: Arc<RwLock<ConfigStore>>,
     tx: Option<mpsc::SyncSender<StoreMessage>>,
     store_delivery_thread: Option<std::thread::JoinHandle<()>>,
     generator: NoteGenerator,
@@ -33,22 +37,19 @@ struct MucapParams {
 impl Default for Mucap {
     fn default() -> Self {
         let store = Arc::new(RwLock::new(MidiStore::new()));
+        let config = Arc::new(RwLock::new(ConfigStore::new()));
+        let cfg = config.read().unwrap().get_config();
         Self {
-            params: Arc::new(MucapParams::default()),
+            params: Arc::new(MucapParams {
+                editor_state: ui::default_state(cfg.scale_factor)
+            }),
             samples: 0,
             time: Arc::new(AtomicF32::new(0.0)),
             store: store.clone(),
+            config,
             tx: None,
             store_delivery_thread: None,
             generator: NoteGenerator::default(),
-        }
-    }
-}
-
-impl Default for MucapParams {
-    fn default() -> Self {
-        Self {
-            editor_state: ui::default_state(),
         }
     }
 }
@@ -165,6 +166,7 @@ impl Plugin for Mucap {
         ui::create(
             self.params.editor_state.clone(),
             self.store.clone(),
+            self.config.clone(),
             self.time.clone(),
         )
     }

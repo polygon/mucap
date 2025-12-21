@@ -1,4 +1,4 @@
-use nih_plug::nih_log;
+use nih_plug::{nih_log, nih_dbg};
 use nih_plug::prelude::{AtomicF32, Editor};
 use nih_plug_vizia::vizia::prelude::*;
 use nih_plug_vizia::widgets::*;
@@ -11,24 +11,27 @@ pub mod miditransfer;
 pub mod style;
 use noteview::NoteView;
 
+use crate::config::ConfigStore;
 use crate::midistore::MidiStore;
 use crate::ui::noteview::NoteViewEvent;
 
 #[derive(Lens)]
 struct Data {
     store: Arc<RwLock<MidiStore>>,
+    config: Arc<RwLock<ConfigStore>>,
     time: Arc<AtomicF32>,
 }
 
 impl Model for Data {}
 
-pub(crate) fn default_state() -> Arc<ViziaState> {
-    ViziaState::new_with_default_scale_factor(|| (700, 200), 2.0)
+pub(crate) fn default_state(scale_factor: f32) -> Arc<ViziaState> {
+    ViziaState::new_with_default_scale_factor(|| (700, 200), scale_factor as f64)
 }
 
 pub(crate) fn create(
     editor_state: Arc<ViziaState>,
     store: Arc<RwLock<MidiStore>>,
+    config: Arc<RwLock<ConfigStore>>,
     time: Arc<AtomicF32>,
 ) -> Option<Box<dyn Editor>> {
     create_vizia_editor(editor_state, ViziaTheming::Custom, move |cx, _| {
@@ -38,6 +41,7 @@ pub(crate) fn create(
         Data {
             store: store.clone(),
             time: time.clone(),
+            config: config.clone(),
         }
         .build(cx);
 
@@ -67,7 +71,7 @@ pub(crate) fn create(
                 .on_drop(|cx, data| {
                     nih_log!("Drop started: {:?}", data);
                 });*/
-            NoteView::new(cx, store.clone(), time.clone())
+            NoteView::new(cx, store.clone(), config.clone(), time.clone())
                 .width(Stretch(1.0))
                 .height(Stretch(1.0));
         })
@@ -75,5 +79,6 @@ pub(crate) fn create(
         .height(Stretch(1.0));
 
         ResizeHandle::new(cx);
+        nih_log!("User Scale Factor at start: {}", cx.user_scale_factor());
     })
 }

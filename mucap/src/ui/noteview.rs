@@ -3,6 +3,7 @@ use std::sync::Arc;
 use std::sync::RwLock;
 use std::sync::atomic::Ordering;
 
+use crate::config::ConfigStore;
 use crate::midistore::MidiStore;
 use crate::midistore::Note;
 use crate::ui::zoom_control::ZoomControl;
@@ -92,6 +93,7 @@ pub enum VScrollMode {
 
 pub struct NoteView {
     store: Arc<RwLock<MidiStore>>,
+    config: Arc<RwLock<ConfigStore>>,
     time: Arc<AtomicF32>,
     zoom_control: ZoomControl,
     note_window: RwLock<NoteWindow>,
@@ -102,16 +104,19 @@ pub struct NoteView {
     snap: SnapMode,
     vscroll: VScrollMode,
     colors: StyleColors,
+    resize_event: Option<(f32, f32)>,
 }
 
 impl NoteView {
     pub fn new(
         cx: &mut Context,
         store: Arc<RwLock<MidiStore>>,
+        config: Arc<RwLock<ConfigStore>>,
         time: Arc<AtomicF32>,
     ) -> Handle<'_, Self> {
         Self {
             store: store.clone(),
+            config,
             time,
             zoom_control: ZoomControl::default(),
             note_window: RwLock::new(NoteWindow::new(
@@ -126,6 +131,7 @@ impl NoteView {
             vscroll: VScrollMode::Zoom,
             snap: SnapMode::Snapping,
             colors: StyleColors::default(),
+            resize_event: None,
         }
         .build(cx, |cx| {
             nih_log!("Spawning Timer Worker!");
@@ -406,6 +412,9 @@ impl View for NoteView {
                     _ => ()
                 }
             }
+            WindowEvent::GeometryChanged(_) => {
+                self.resize_event = Some((t_now, cx.scale_factor()))
+            }
             ev => nih_log!("Window Event: {:?}", ev),
         });
     }
@@ -438,6 +447,17 @@ impl NoteView {
 
         self.zoom_control.update_time((0.0, t_now + 30.0));
         self.zoom_control.update(1. / 60.);
+
+        // Was the window resized, store the new scale_factor in the config
+        if let Some((t, scale_factor)) = self.resize_event {
+            if (t_now - t) > 1.0 {
+                let mut cstore = self.config.write().unwrap();
+                let mut cfg = cstore.get_config();
+                cfg.scale_factor = scale_factor;
+                cstore.set_config(&cfg);
+                self.resize_event = None;
+            }
+        }
     }
 
     fn snap(&self, x: f32) -> f32 {

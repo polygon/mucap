@@ -16,6 +16,7 @@ pub struct NoteGenerator {
     stddev: f32,
     exp_note_dist: f32,
     exp_note_length: f32,
+    play_penalty: f32,
     pub rng: Option<rand::rngs::SmallRng>,
 }
 
@@ -27,8 +28,9 @@ impl Default for NoteGenerator {
             note_max: 108.into(),
             avg: 60.0,
             stddev: 5.,
-            exp_note_dist: 0.4,     // On average one note every 0.8 seconds
-            exp_note_length: 2.5,   // On average one note lasts 1.3 seconds
+            exp_note_dist: 0.2,     // Average note distance
+            exp_note_length: 0.5,   // Average note length
+            play_penalty: 1.25,      // Space out notes further by this factor times number of playing notes
             rng: Some(rand::rngs::SmallRng::seed_from_u64(1)),
         }
     }
@@ -68,7 +70,7 @@ impl NoteGenerator {
             let mut cursor = Cursor::new(&mut buf[..]);
             ev.write(&mut cursor).unwrap();
             Some(buf)
-        } else if !self.active.contains_key(&key.into()) && exponential_event(&mut rng, dt, self.exp_note_dist)
+        } else if !self.active.contains_key(&key.into()) && exponential_event(&mut rng, dt, self.exp_note_dist * (1.0 + self.play_penalty * self.active.len() as f32))
         {
             self.active.insert(key.into(), ());
             let ev = LiveEvent::Midi { channel: 0.into(), message: MidiMessage::NoteOn {key: key.into(), vel: 64.into() }};

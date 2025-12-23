@@ -3,6 +3,7 @@ use nih_plug::prelude::{AtomicF32, Editor};
 use nih_plug_vizia::vizia::prelude::*;
 use nih_plug_vizia::widgets::*;
 use nih_plug_vizia::{ViziaState, ViziaTheming, assets, create_vizia_editor};
+use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, RwLock};
 
 pub mod noteview;
@@ -33,6 +34,7 @@ pub(crate) fn create(
     store: Arc<RwLock<MidiStore>>,
     config: Arc<RwLock<ConfigStore>>,
     time: Arc<AtomicF32>,
+    debug_stop: Arc<AtomicBool>,
 ) -> Option<Box<dyn Editor>> {
     create_vizia_editor(editor_state, ViziaTheming::Custom, move |cx, _| {
         assets::register_noto_sans_light(cx);
@@ -71,7 +73,7 @@ pub(crate) fn create(
                 .on_drop(|cx, data| {
                     nih_dbg!("Drop started: {:?}", data);
                 });*/
-            NoteView::new(cx, store.clone(), config.clone(), time.clone())
+            NoteView::new(cx, store.clone(), config.clone(), time.clone(), debug_stop.clone())
                 .width(Stretch(1.0))
                 .height(Stretch(1.0));
         })

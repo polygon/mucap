@@ -13,7 +13,7 @@ use midly::{
     MetaMessage, MidiMessage, Track, TrackEvent, TrackEventKind,
     num::{u4, u15, u24, u28},
 };
-use nih_plug::{nih_error, nih_dbg, nih_warn};
+use nih_plug::{nih_dbg, nih_error, nih_log, nih_warn};
 use tempfile::{Builder, NamedTempFile};
 
 pub struct MidiTransfers {
@@ -233,7 +233,7 @@ impl MidiTransfers {
             .set()
             .file_list(&[midifile.path()])
         {
-            nih_dbg!("Copied path {:?} to clipboard", midifile.path());
+            nih_log!("Copied path {:?} to clipboard", midifile.path());
         } else {
             nih_warn!("Failed to copy to clipboard");
             return;

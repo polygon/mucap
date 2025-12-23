@@ -1,7 +1,7 @@
 use nih_plug::{midi::MidiResult, prelude::*, nih_dbg};
 use nih_plug_vizia::ViziaState;
 use rand::Rng;
-use std::sync::{Arc, RwLock, atomic::Ordering, mpsc};
+use std::sync::{Arc, RwLock, atomic::{AtomicBool, Ordering}, mpsc};
 
 mod midistore;
 mod note_generator;
@@ -23,6 +23,7 @@ pub struct Mucap {
     time: Arc<AtomicF32>,
     store: Arc<RwLock<MidiStore>>,
     config: Arc<RwLock<ConfigStore>>,
+    debug_stop: Arc<AtomicBool>,
     tx: Option<mpsc::SyncSender<StoreMessage>>,
     store_delivery_thread: Option<std::thread::JoinHandle<()>>,
     generator: NoteGenerator,
@@ -50,6 +51,7 @@ impl Default for Mucap {
             tx: None,
             store_delivery_thread: None,
             generator: NoteGenerator::default(),
+            debug_stop: Arc::new(AtomicBool::new(false)),
         }
     }
 }
@@ -168,6 +170,7 @@ impl Plugin for Mucap {
             self.store.clone(),
             self.config.clone(),
             self.time.clone(),
+            self.debug_stop.clone(),
         )
     }
 
@@ -195,18 +198,26 @@ impl Plugin for Mucap {
         _aux: &mut AuxiliaryBuffers,
         context: &mut impl ProcessContext<Self>,
     ) -> ProcessStatus {
-        // We'll invert the channel, note index, velocity, pressure, CC value, pitch bend, and
-        // anything else that is invertable for all events we receive
+        // If debug_stop is requested (e.g. for screenshots), completely skip processing
+        if self.debug_stop.load(Ordering::Relaxed) 
+        {
+            return ProcessStatus::Normal;
+        }
+
         while let Some(event) = context.next_event() {
             let ev_samples = self.samples + event.timing() as i64;
             let ev_time = ev_samples as f32 / context.transport().sample_rate;
             if let Some(MidiResult::Basic(buf)) = event.as_midi() {
+                // If event is a MIDI message, store it
                 self.tx
                     .iter_mut()
                     .map(|tx| tx.send(StoreMessage::MidiData(ev_time, buf)).unwrap_or(()))
                     .next()
                     .unwrap_or(());
             }
+            // In any case, resend event so we don't block MIDI for later blocks
+            context.send_event(event);
+
             //nih_log!("Event @ {:.6}: {:?}", ev_time, event.as_midi());
         }
 

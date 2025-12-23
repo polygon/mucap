@@ -1,6 +1,7 @@
 use std::num::NonZero;
 use std::sync::Arc;
 use std::sync::RwLock;
+use std::sync::atomic::AtomicBool;
 use std::sync::atomic::Ordering;
 
 use crate::config::ConfigStore;
@@ -105,6 +106,7 @@ pub struct NoteView {
     vscroll: VScrollMode,
     colors: StyleColors,
     resize_event: Option<(f32, f32)>,
+    debug_stop: Arc<AtomicBool>,
 }
 
 impl NoteView {
@@ -113,6 +115,7 @@ impl NoteView {
         store: Arc<RwLock<MidiStore>>,
         config: Arc<RwLock<ConfigStore>>,
         time: Arc<AtomicF32>,
+        debug_stop: Arc<AtomicBool>,
     ) -> Handle<'_, Self> {
         Self {
             store: store.clone(),
@@ -132,6 +135,7 @@ impl NoteView {
             snap: SnapMode::Snapping,
             colors: StyleColors::default(),
             resize_event: None,
+            debug_stop: debug_stop.clone(),
         }
         .build(cx, |cx| {
             nih_dbg!("Spawning Timer Worker!");
@@ -394,10 +398,13 @@ impl View for NoteView {
             }
             WindowEvent::KeyDown(code, key) => {
                 nih_dbg!("Key Down: {:?}, {:?}", code, key);
-                match key {
-                    Some(Key::Shift) => {
+                match (key, code) {
+                    (Some(Key::Shift), _) => {
                         self.snap = SnapMode::Off;
                         self.vscroll = VScrollMode::Pan;
+                    }
+                    (_, Code::KeyD) => {
+                        self.debug_stop.fetch_update(Ordering::Relaxed, Ordering::Relaxed, |val| Some(!val)).unwrap();
                     }
                     _ => ()
                 }

@@ -19,6 +19,7 @@
       rust-bin = (pkgs.rust-bin.stable.latest.default.override {
         extensions = [ "rust-src" ];
       });
+      version = toString (import ./VERSION);
       dev-deps = with pkgs; [
         rust-bin
         rust-analyzer
@@ -53,6 +54,7 @@
         mucap = naersk-lib.buildPackage {
           pname = "mucap";
           root = ./.;
+          version = version;
           buildInputs = runtime-deps;
           nativeBuildInputs = build-deps;
           overrideMain = attrs: {

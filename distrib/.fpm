@@ -1,7 +1,6 @@
 -s dir
 --name mucap
 --license gpl3
---version 0.1.0
 --architecture native
 --description "Retrospective MIDI recording plugin"
 --url "https://github.com/polygon/mucap"

@@ -1,6 +1,8 @@
 [package]
 name = "mucap"
-version = "0.1.0"
+# TODO: I'd like to single-source the version from ../VERSION, but found no way to
+#       make this work, so we have to repeat the version here
+version = "0.9.0"
 edition = "2024"
 
 [lib]

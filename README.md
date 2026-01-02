@@ -61,7 +61,7 @@ After 30 seconds of inactivity, Mucap will resume following the playhead.
 
 ## Operational peculiarities
 
-Detailed information about program behaviors you may find useful. Some of these were design choices that needed to be made.
+Detailed information about program behaviors you may find useful.
 
 ### BPM and time stretching
 
@@ -82,3 +82,54 @@ Mucap will export all MIDI events that happen inside the time selection. If the 
 Mucap treats the MIDI channel like any other event property. Exported MIDI data will be a single track that contains all data of all channels. This should, in theory, make it work with MPE controllers, though that has not been tested so far.
 
 It is not planned to offer special modes where different channels are handled differently. If you have this use-case, please launch one Mucap instance per channel and handle the MIDI routing in your DAW.
+
+## Building
+
+### Nix / NixOS environment
+
+Mucap requires Flakes enabled in Nix. If you run nix-direnv, you can just allow the `.envrc` file, otherwise enter the devshell.
+
+```sh
+# With nix-direnv
+direnv allow
+
+# Normal devshell
+nix develop
+```
+
+### Debian-based environment
+
+Install the required dependencies (see also `distrib/Dockerfile`):
+
+```sh
+apt install \
+    build-essential \
+    git \
+    rustup \
+    pkg-config \
+    libgl-dev \
+    libx11-xcb-dev \
+    libxcursor-dev \
+    libasound2-dev \
+    python3 \
+    libjack-dev \
+    libxcb-icccm4-dev \
+    libxcb-dri2-0-dev
+rustup toolchain install stable
+```
+
+### Building
+
+Build using:
+
+```
+cargo xtask bundle mucap --release
+```
+
+The artifacts will be in `target/bundled`.
+
+## Contributing
+
+I want to make Mucap as accessible as possible. If you know packaging for distributions that are currently unsupported, I'd like to cooperate with you. I believe there is no reason why this should not also run under Windows or OSX, but alas, I could use some support there, too.
+
+I am open for bug reports and feature requests, though especially the latter will kinda depend on personal interest. Pull Requests with new functionality are welcome but consider getting in contact prior if you plan something larger.
